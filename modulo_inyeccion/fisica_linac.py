@@ -1,5 +1,4 @@
-
-""" 
+"""
 modulo_inyeccion/fisica_linac.py — Física del Acelerador Lineal (Linac)
 
 
@@ -20,10 +19,21 @@ modulo_inyeccion/fisica_linac.py — Física del Acelerador Lineal (Linac)
         paquetes (las que van adelante reciben menos fuerza, las de
         atrás reciben más, convergiendo en una fase estable)
 
-   La integración es semi-implícita (Euler): primero se actualiza la
-   velocidad con la aceleración, luego la posición con la nueva velocidad.
+ Dinámica relativista (predeterminada):
+   Cuando relativista=True, se usa F = dp/dt con p = γ·m·v:
+     1. Se calcula γ desde la velocidad actual
+     2. Se obtiene el momento p = γ·m·v
+     3. Se actualiza p_z con el impulso q·E·dt
+     4. Se recalcula γ desde |p|²: γ = √(1 + p²/(m²c²))
+     5. Se obtiene la nueva velocidad v = p / (γ·m)
+     6. Energía cinética relativista: E_k = (γ - 1)·m·c²
 
+   Esto es correcto para cualquier velocidad (0 ≤ v < c).
+
+ Dinámica Newtoniana (relativista=False):
+   Usa F = m·a (original). Válido solo cuando v ≪ c.
 """
+
 import numpy as np
 from common.constants import (
     X, Y, Z, VX, VY, VZ, ENERGIA,
@@ -47,13 +57,18 @@ class Linac:
         Fase inicial del campo (rad). π/4 da aceleración + bunching.
     longitud : float
         Longitud física del linac (m). Fuera de este rango no hay campo.
+    relativista : bool
+        Si True, usa dinámica relativista (F = dp/dt, p = γ·m·v).
+        Si False, usa Newton (F = m·a). Recomendado: True.
     """
 
-    def __init__(self, E0=1e6, frecuencia=3e9, fase=np.pi / 4, longitud=1.0):
+    def __init__(self, E0=1e6, frecuencia=3e9, fase=np.pi / 4, longitud=1.0,
+                 relativista=True):
         self.E0 = E0
         self.frecuencia = frecuencia
         self.fase = fase
         self.longitud = longitud
+        self.relativista = relativista
 
         # Precálculo de parámetros de la onda
         self.omega = 2 * np.pi * frecuencia
@@ -62,8 +77,7 @@ class Linac:
     def simular(self, bunch, dt=1e-12, pasos=2500):
         """Ejecuta la simulación del paso del bunch por el Linac.
 
-        Aplica el campo RF viajero E_z(z,t) partícula por partícula
-        usando integración semi-implícita (Euler).
+        Aplica el campo RF viajero E_z(z,t) partícula por partícula.
 
         Parameters
         ----------
@@ -88,30 +102,81 @@ class Linac:
         # El frame 0 es el estado inicial
         historico = [Bunch(datos.copy())]
 
-        for paso in range(pasos):
-            t = paso * dt  # tiempo actual
+        if self.relativista:
+            self._simular_relativista(datos, dt, pasos, historico)
+        else:
+            self._simular_newtoniano(datos, dt, pasos, historico)
 
-            # Campo RF viajero E_z(z,t) = E0 * sin(ωt - kz + φ)
-            # Cada partícula siente un campo distinto según su posición z
+        return historico
+
+    # ------------------------------------------------------------------
+    # Versión Newtoniana:  F = m·a   (original, v ≪ c)
+    # ------------------------------------------------------------------
+    def _simular_newtoniano(self, datos, dt, pasos, historico):
+        for paso in range(pasos):
+            t = paso * dt
+
+            # Campo RF viajero
             E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
 
-            # Máscara: fuera del linac no hay campo acelerador
+            # Máscara: fuera del linac no hay campo
             mascara = np.abs(datos[:, Z]) < self.longitud / 2
             a_z = np.where(mascara, CARGA_ELECTRON * E_z / MASA_ELECTRON, 0.0)
 
-            # Integración semi-implícita:
-            #   1° actualizar velocidad con la aceleración actual
-            #   2° actualizar posición con la NUEVA velocidad
+            # Integración semi-implícita: velocidad → posición
             datos[:, VZ] += a_z * dt
             datos[:, X] += datos[:, VX] * dt
             datos[:, Y] += datos[:, VY] * dt
             datos[:, Z] += datos[:, VZ] * dt
 
-            # Recalcular energía cinética: E = 0.5 * m * v²
+            # Energía cinética Newtoniana: E = ½ m v²
             v2 = datos[:, VX]**2 + datos[:, VY]**2 + datos[:, VZ]**2
             datos[:, ENERGIA] = 0.5 * MASA_ELECTRON * v2
 
-            # Guardar el frame actual
             historico.append(Bunch(datos.copy()))
 
-        return historico
+    # ------------------------------------------------------------------
+    # Versión Relativista:  F = dp/dt,  p = γ·m·v
+    # ------------------------------------------------------------------
+    def _simular_relativista(self, datos, dt, pasos, historico):
+        for paso in range(pasos):
+            t = paso * dt
+
+            # Campo RF viajero
+            E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
+
+            # 1. Velocidad al cuadrado y factor γ actual
+            v2 = datos[:, VX]**2 + datos[:, VY]**2 + datos[:, VZ]**2
+            gamma = 1.0 / np.sqrt(1.0 - v2 / VELOCIDAD_LUZ**2)
+
+            # 2. Momento lineal relativista:  p = γ·m·v
+            masa_gamma = gamma * MASA_ELECTRON
+            px = masa_gamma * datos[:, VX]
+            py = masa_gamma * datos[:, VY]
+            pz = masa_gamma * datos[:, VZ]
+
+            # 3. Actualizar p_z con el impulso  Δp = q·E·Δt
+            mascara = np.abs(datos[:, Z]) < self.longitud / 2
+            dp_z = np.where(mascara, CARGA_ELECTRON * E_z * dt, 0.0)
+            pz += dp_z
+
+            # 4. Recalcular γ desde |p|:
+            #    γ = √(1 + p²/(m²c²))   →  proviene de  E² = p²c² + m²c⁴
+            p2 = px**2 + py**2 + pz**2
+            gamma_new = np.sqrt(1.0 + p2 / (MASA_ELECTRON * VELOCIDAD_LUZ)**2)
+
+            # 5. Nueva velocidad:  v = p / (γ·m)
+            masa_gamma_new = gamma_new * MASA_ELECTRON
+            datos[:, VX] = px / masa_gamma_new
+            datos[:, VY] = py / masa_gamma_new
+            datos[:, VZ] = pz / masa_gamma_new
+
+            # 6. Actualizar posiciones
+            datos[:, X] += datos[:, VX] * dt
+            datos[:, Y] += datos[:, VY] * dt
+            datos[:, Z] += datos[:, VZ] * dt
+
+            # 7. Energía cinética relativista:  E_k = (γ - 1)·m·c²
+            datos[:, ENERGIA] = (gamma_new - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ**2
+
+            historico.append(Bunch(datos.copy()))
