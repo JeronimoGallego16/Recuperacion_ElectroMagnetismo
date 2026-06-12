@@ -26,7 +26,7 @@ from matplotlib.gridspec import GridSpec
 from common.constants import CARGA_ELECTRON, VELOCIDAD_LUZ
 
 
-def animar_booster(historico, radio_booster=2.0, intervalo=15,
+def animar_booster(historico, radio_booster=2.0, intervalo=10,
                    mostrar=True, guardar=False):
     """Reproduce la animación del bunch en el Booster (3 paneles).
 
@@ -108,7 +108,7 @@ def animar_booster(historico, radio_booster=2.0, intervalo=15,
     # Punto de inyección (lado derecho)
     ax1.plot(radio_booster, 0, 'g*', markersize=14, label='Inyección')
 
-    scatter1 = ax1.scatter([], [], c=[], cmap='plasma', s=10, alpha=0.8)
+    scatter1 = ax1.scatter([], [], c=[], cmap='plasma', s=10)
     ax1.set_xlim(x_lim)
     ax1.set_ylim(z_lim)
     ax1.set_xlabel('x (m)')
@@ -165,10 +165,20 @@ def animar_booster(historico, radio_booster=2.0, intervalo=15,
         x = bunch.x
         e_kev = j_a_kev(bunch.energia)
 
-        # Panel 1: vista en planta (xz)
+        # Panel 1: vista en planta (xz) con alfa por densidad
+        cx, cz = np.mean(x), np.mean(z)
+        dist = np.sqrt((x - cx)**2 + (z - cz)**2)
+        d_max = dist.max()
+        if d_max > 1e-12:
+            alphas = 1.0 - 0.6 * (dist / d_max)
+        else:
+            alphas = np.ones(len(x))
+
+        rgba = plt.cm.plasma(norm(e_kev))
+        rgba[:, 3] = alphas
         scatter1.set_offsets(np.column_stack([x, z]))
-        scatter1.set_array(e_kev)
-        scatter1.set_norm(norm)
+        scatter1.set_facecolors(rgba)
+        scatter1.set_edgecolors(rgba)
 
         # Panel 2: evolución de la energía media (hasta el frame actual)
         line_e.set_data(np.arange(frame + 1), energia_media[:frame + 1])
