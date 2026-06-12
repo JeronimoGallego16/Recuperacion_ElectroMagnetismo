@@ -17,6 +17,7 @@
 
 import matplotlib.pyplot as plt
 from modulo_inyeccion import Bunch, Linac, animar_linac
+from modulo_transferencia import Booster, animar_booster
 
 
 def main():
@@ -41,15 +42,19 @@ def main():
     #   bunch_para_booster = historico_linac[-1]
 
     # ==================================================================
-    # ETAPA 2 — Booster (Integrante 2) — Descomentar cuando esté listo
+    # ETAPA 2 — Booster (Integrante 2)
     # ==================================================================
-    # from modulo_transferencia import Booster, animar_booster
-    #
-    # print("=== ETAPA 2: Booster ===")
-    # booster = Booster()
-    # historico_booster = booster.simular(historico_linac[-1])
-    # animar_booster(historico_booster)
-    # bunch_para_ring = historico_booster[-1]
+    print("=== ETAPA 2: Booster ===")
+    booster = Booster()
+    print("Simulando curvatura y aceleración en el booster...")
+    historico_booster = booster.simular(historico_linac[-1])
+
+    print(f"Animación lista ({len(historico_booster)} frames). Mostrando...")
+    animar_booster(historico_booster, radio_booster=booster.radio_booster)
+
+    # Al cerrar la ventana de animación, el estado final del Booster
+    # estará listo para pasar al próximo módulo:
+    bunch_para_ring = historico_booster[-1]
 
     # ==================================================================
     # ETAPA 3 — Anillo (Integrante 3) — Descomentar cuando esté listo
