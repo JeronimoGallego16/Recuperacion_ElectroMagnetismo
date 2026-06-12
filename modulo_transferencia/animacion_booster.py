@@ -26,7 +26,7 @@ from matplotlib.gridspec import GridSpec
 from common.constants import CARGA_ELECTRON, VELOCIDAD_LUZ
 
 
-def animar_booster(historico, radio_booster=2.0, intervalo=30,
+def animar_booster(historico, radio_booster=2.0, intervalo=15,
                    mostrar=True, guardar=False):
     """Reproduce la animación del bunch en el Booster (3 paneles).
 

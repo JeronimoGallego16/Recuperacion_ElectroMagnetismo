@@ -174,49 +174,44 @@ class Booster:
             pz = masa_gamma * datos[:, VZ]
 
             # ----------------------------------------------------------
-            # 2. Kick RF discreto — al inicio de cada vuelta
+            # 2. Aceleración RF continua — aplicada en cada paso
             #
-            #    Cavidad RF localizada en el punto de inyección. Cada
-            #    vuelta, el haz recibe ΔE = |q|·V_rf en un solo impulso
-            #    tangencial. Aplicamos el kick ANTES de calcular B,
-            #    para que el campo magnético del resto de la vuelta
-            #    incluya la ganancia de momento exacta.
+            #    La ganancia total por vuelta ΔE = |q|·V_rf se distribuye
+            #    uniformemente entre todos los pasos. En cada paso se
+            #    aplica ΔE_paso = ΔE / pasos_por_vuelta usando la
+            #    fórmula relativista exacta:
+            #      γ_new = 1 + (E_old + ΔE_paso) / mc²
+            #      |p_new| = √(γ_new² - 1) · mc
+            #      Δp = (|p_new| - |p_old|) · v̂
             #
-            #    Tras el kick, RECALCULAMOS dt para que 50 pasos sigan
-            #    correspondiendo a una vuelta completa a la nueva v.
+            #    Tras el kick se recalcula dt para que 50 pasos sigan
+            #    correspondiendo exactamente a una vuelta completa.
             # ----------------------------------------------------------
-            if paso % self.pasos_por_vuelta == 0:
-                # Energía objetivo tras el kick: E_new = E_old + ΔE
-                E_old_j = (gamma - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ**2
-                E_new_j = E_old_j + delta_E_rf
+            E_old_j = (gamma - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ**2
+            E_new_j = E_old_j + delta_E_rf / self.pasos_por_vuelta
 
-                # γ y momento final exactos
-                gamma_new = 1.0 + E_new_j / (MASA_ELECTRON * VELOCIDAD_LUZ**2)
-                gamma_new = np.maximum(gamma_new, 1.0 + 1e-12)
-                p_new_mag = np.sqrt(gamma_new**2 - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ
+            gamma_new = 1.0 + E_new_j / (MASA_ELECTRON * VELOCIDAD_LUZ**2)
+            gamma_new = np.maximum(gamma_new, 1.0 + 1e-12)
+            p_new_mag = np.sqrt(gamma_new**2 - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ
 
-                # Momento actual (escalar)
-                p_old_mag = np.sqrt(px**2 + py**2 + pz**2)
-                p_old_mag = np.maximum(p_old_mag, 1e-30)
+            p_old_mag = np.sqrt(px**2 + py**2 + pz**2)
+            p_old_mag = np.maximum(p_old_mag, 1e-30)
 
-                # Δp en dirección de v (Δp = (|p_new| - |p_old|) · v̂)
-                dp_scale = (p_new_mag - p_old_mag) / p_old_mag
-                px += px * dp_scale
-                py += py * dp_scale
-                pz += pz * dp_scale
+            dp_scale = (p_new_mag - p_old_mag) / p_old_mag
+            px += px * dp_scale
+            py += py * dp_scale
+            pz += pz * dp_scale
 
-                # Gamma y velocidades post-RF
-                gamma = gamma_new
-                masa_gamma = gamma * MASA_ELECTRON
-                datos[:, VX] = px / masa_gamma
-                datos[:, VY] = py / masa_gamma
-                datos[:, VZ] = pz / masa_gamma
+            gamma = gamma_new
+            masa_gamma = gamma * MASA_ELECTRON
+            datos[:, VX] = px / masa_gamma
+            datos[:, VY] = py / masa_gamma
+            datos[:, VZ] = pz / masa_gamma
 
-                # Recalcular dt para 50 pasos = 1 órbita
-                v2 = (px**2 + py**2 + pz**2) / masa_gamma**2
-                v_mean = np.sqrt(np.mean(v2))
-                periodo_orbital = 2.0 * np.pi * self.radio_booster / v_mean
-                dt = periodo_orbital / self.pasos_por_vuelta
+            v2_media = (px**2 + py**2 + pz**2) / masa_gamma**2
+            v_mean = np.sqrt(np.mean(v2_media))
+            periodo_orbital = 2.0 * np.pi * self.radio_booster / v_mean
+            dt = periodo_orbital / self.pasos_por_vuelta
 
             # ----------------------------------------------------------
             # 3. Campo magnético de tracking dinámico
