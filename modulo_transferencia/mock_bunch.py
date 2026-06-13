@@ -21,11 +21,11 @@ import numpy as np
 def generar_bunch_post_linac(n_particulas=200, seed=42):
     """Genera un Bunch simulando la SALIDA del Linac.
 
-    Simula electrones que ya fueron acelerados:
-      - Bien agrupados en z (sigma = 0.1 mm) alrededor de z = 0.5 m
-      - Alta velocidad longitudinal (vz ~ 1e8 m/s ≈ 0.33c)
-      - Baja dispersión transversal (sigma = 0.1 mm)
-      - Velocidades transversales pequeñas
+    Las macropartículas siguen una distribución normal (gaussiana) tanto
+    en posición como en velocidad. La dispersión transversal (σ_x) y
+    longitudinal (σ_z) están ajustadas para que el bunch se vea como un
+    paquete compacto y ovalado ('frijolito' de energía), con centro denso
+    y extremos difusos.
 
     Returns
     -------
@@ -37,16 +37,18 @@ def generar_bunch_post_linac(n_particulas=200, seed=42):
 
     datos = np.zeros((n_particulas, 7))
 
-    # Posiciones: haz bien agrupado (ya hubo bunching en el Linac)
-    datos[:, 0] = np.random.normal(0, 1e-4, n_particulas)      # x
-    datos[:, 1] = np.random.normal(0, 1e-4, n_particulas)      # y
-    datos[:, 2] = np.random.normal(0.5, 1e-4, n_particulas)    # z ~ 0.5 m
+    # Posiciones: distribución elíptica (ovalada)
+    # σ_x = 0.05 m  (eje corto, dispersión transversal)
+    # σ_z = 0.15 m  (eje largo, dispersión longitudinal a lo largo de la órbita)
+    datos[:, 0] = np.random.normal(0, 0.05, n_particulas)      # x
+    datos[:, 1] = np.random.normal(0, 1e-4, n_particulas)      # y (vertical, se mantiene apretada)
+    datos[:, 2] = np.random.normal(0.5, 0.15, n_particulas)    # z
 
-    # Velocidades: alta energía en z, poca dispersión transversal
+    # Velocidades: muy poca dispersión para que el bunch no se desfleque
     v_avg = 1e8  # ~0.33c
-    datos[:, 3] = np.random.normal(0, 1e5, n_particulas)       # vx
-    datos[:, 4] = np.random.normal(0, 1e5, n_particulas)       # vy
-    datos[:, 5] = np.random.normal(v_avg, 1e5, n_particulas)   # vz
+    datos[:, 3] = np.random.normal(0, 1e3, n_particulas)       # vx
+    datos[:, 4] = np.random.normal(0, 1e3, n_particulas)       # vy
+    datos[:, 5] = np.random.normal(v_avg, 1e3, n_particulas)   # vz
 
     # Energía cinética: E = 0.5 * m_e * v²
     v2 = datos[:, 3]**2 + datos[:, 4]**2 + datos[:, 5]**2
