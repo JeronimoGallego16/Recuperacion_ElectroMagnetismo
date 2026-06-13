@@ -1,37 +1,22 @@
 """
 modulo_inyeccion/fisica_linac.py — Física del Acelerador Lineal (Linac)
 
-
  Modelo físico:
-   El Linac acelera electrones mediante un campo eléctrico RF viajero
-   a lo largo del eje longitudinal z. El campo tiene la forma:
+   Campo RF viajero:  E_z(z,t) = E0 · sin(ω·t - k·z + φ)
 
-     E_z(z, t) = E0 · sin(ω·t - k·z + φ)
+   DOS MODOS:
 
-   donde:
-     ω = 2π·frecuencia  (frecuencia angular RF)
-     k = ω / c          (número de onda, la onda viaja a velocidad de la luz)
-     φ = fase inicial
+   1) 'dc' (RECOMENDADO — default)
+      Cada partícula tiene su propio k = ω / v_z adaptado paso a paso.
+      Esto mantiene cada electrón en su fase de resonancia individual:
+      las que arrancan en fase aceleradora se aceleran, las que arrancan
+      en fase desaceleradora se frenan, produciendo BUNCHING real.
 
-   Este campo produce dos efectos simultáneos:
-     1. ACELERACIÓN: las partículas ganan energía cinética en z
-     2. BUNCHING: el gradiente del campo agrupa las partículas en
-        paquetes (las que van adelante reciben menos fuerza, las de
-        atrás reciben más, convergiendo en una fase estable)
+   2) 'dc'
+      Campo constante. Aceleración pareja para todas. No hay bunching.
 
- Dinámica relativista (predeterminada):
-   Cuando relativista=True, se usa F = dp/dt con p = γ·m·v:
-     1. Se calcula γ desde la velocidad actual
-     2. Se obtiene el momento p = γ·m·v
-     3. Se actualiza p_z con el impulso q·E·dt
-     4. Se recalcula γ desde |p|²: γ = √(1 + p²/(m²c²))
-     5. Se obtiene la nueva velocidad v = p / (γ·m)
-     6. Energía cinética relativista: E_k = (γ - 1)·m·c²
-
-   Esto es correcto para cualquier velocidad (0 ≤ v < c).
-
- Dinámica Newtoniana (relativista=False):
-   Usa F = m·a (original). Válido solo cuando v ≪ c.
+ Dinámica relativista (siempre activa):
+   F = dp/dt,  p = γ·m·v,  E_k = (γ-1)·m·c²
 """
 
 import numpy as np
@@ -43,140 +28,150 @@ from common.bunch import Bunch
 
 
 class Linac:
-    """Acelerador lineal (Linac) con campo RF viajero.
+    """Acelerador lineal (Linac).
 
-    Encapsula los parámetros físicos del linac y el método de simulación.
-
-    Parameters de __init__
-    ----------------------
+    Parameters
+    ----------
     E0 : float
-        Amplitud del campo eléctrico RF (V/m). Típico: 1e6 a 10e6 V/m.
+        Amplitud del campo eléctrico (V/m).
+    modo : str
+        'rf' (default, con bunching) | 'dc' (campo constante)
     frecuencia : float
-        Frecuencia RF (Hz). Típico: 3e9 Hz (banda S).
+        Frecuencia RF (Hz). Solo usado en modo 'rf'.
     fase : float
         Fase inicial del campo (rad). π/4 da aceleración + bunching.
     longitud : float
-        Longitud física del linac (m). Fuera de este rango no hay campo.
-    relativista : bool
-        Si True, usa dinámica relativista (F = dp/dt, p = γ·m·v).
-        Si False, usa Newton (F = m·a). Recomendado: True.
+        Longitud física del linac (m).
     """
 
-    def __init__(self, E0=1e6, frecuencia=3e9, fase=np.pi / 4, longitud=1.0,
-                 relativista=True):
+    MODOS_VALIDOS = {'rf', 'dc'}
+
+    def __init__(self, E0=2e5, modo='dc', frecuencia=3e9,
+                 fase=np.pi / 4, longitud=1.0):
+        if modo not in self.MODOS_VALIDOS:
+            raise ValueError(f"Modo debe ser uno de {self.MODOS_VALIDOS}")
         self.E0 = E0
+        self.modo = modo
         self.frecuencia = frecuencia
         self.fase = fase
         self.longitud = longitud
-        self.relativista = relativista
-
-        # Precálculo de parámetros de la onda
         self.omega = 2 * np.pi * frecuencia
-        self.k = self.omega / VELOCIDAD_LUZ   # número de onda
 
-    def simular(self, bunch, dt=1e-12, pasos=2500):
+    def simular(self, bunch, dt=1e-12, pasos=3000):
         """Ejecuta la simulación del paso del bunch por el Linac.
-
-        Aplica el campo RF viajero E_z(z,t) partícula por partícula.
-
-        Parameters
-        ----------
-        bunch : Bunch
-            Bunch de electrones a acelerar.
-        dt : float
-            Paso de tiempo (s). 1e-12 s = 1 ps.
-        pasos : int
-            Número de iteraciones de simulación.
 
         Returns
         -------
         list[Bunch]
-            Lista con el estado del bunch en CADA paso de tiempo.
-            historico[0]   = estado inicial
-            historico[-1]  = estado final (para pasar al próximo módulo)
-            len(historico) = pasos + 1 (incluye el inicial)
+            historico[0]  = estado inicial
+            historico[-1] = estado final (pasa al próximo módulo)
         """
-        # Trabajamos sobre una copia para no mutar el original
         datos = bunch.datos.copy()
-
-        # El frame 0 es el estado inicial
         historico = [Bunch(datos.copy())]
 
-        if self.relativista:
-            self._simular_relativista(datos, dt, pasos, historico)
+        if self.modo == 'rf':
+            self._simular_rf(datos, dt, pasos, historico)
         else:
-            self._simular_newtoniano(datos, dt, pasos, historico)
+            self._simular_dc(datos, dt, pasos, historico)
 
         return historico
 
     # ------------------------------------------------------------------
-    # Versión Newtoniana:  F = m·a   (original, v ≪ c)
+    # Modo RF — bunching por fase individual
     # ------------------------------------------------------------------
-    def _simular_newtoniano(self, datos, dt, pasos, historico):
+    # Cada partícula tiene k_i = ω / v_z_i, lo que la mantiene en fase
+    # consigo misma. La fase que ve depende de su condición inicial:
+    #
+    #   θ_i = ω·(t - z_i/v_z_i) + φ ≈ -ω·z0_i/v_z_i + φ  (constante)
+    #
+    # Esto produce:
+    #   - Partículas en fase aceleradora  (θ ~ π/4):  ganan energía
+    #   - Partículas en fase desaceleradora (θ ~ 5π/4): pierden energía
+    #   - Convergencia en espacio de fase:  BUNCHING
+    # ------------------------------------------------------------------
+    def _simular_rf(self, datos, dt, pasos, historico):
+        c = VELOCIDAD_LUZ
+        m = MASA_ELECTRON
+        q = CARGA_ELECTRON
+        mc2 = m * c * c
+        omega = self.omega
+
         for paso in range(pasos):
             t = paso * dt
 
-            # Campo RF viajero
-            E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
+            # Velocidad actual de cada partícula (evitar división por cero)
+            vz = np.abs(datos[:, VZ])
+            vz = np.maximum(vz, 1e3)
 
-            # Máscara: fuera del linac no hay campo
+            # k individual para cada partícula:  k_i = ω / v_z_i
+            k_i = omega / vz
+
+            # Campo RF individual:  E_z_i = E0 · sin(ω·t - k_i·z_i + φ)
+            E_z = self.E0 * np.sin(omega * t - k_i * datos[:, Z] + self.fase)
+
+            # Solo acelera dentro del linac
             mascara = np.abs(datos[:, Z]) < self.longitud / 2
-            a_z = np.where(mascara, CARGA_ELECTRON * E_z / MASA_ELECTRON, 0.0)
 
-            # Integración semi-implícita: velocidad → posición
-            datos[:, VZ] += a_z * dt
+            # === Paso relativista: F = dp/dt ===
+            vx, vy = datos[:, VX], datos[:, VY]
+            v2 = vx*vx + vy*vy + vz*vz
+            gamma = 1.0 / np.sqrt(1.0 - v2 / (c*c))
+
+            mg = gamma * m
+            px, py, pz = mg * vx, mg * vy, mg * vz
+
+            dp_z = np.where(mascara, q * E_z * dt, 0.0)
+            pz += dp_z
+
+            p2 = px*px + py*py + pz*pz
+            gamma_new = np.sqrt(1.0 + p2 / (m*m * c*c))
+
+            mg_new = gamma_new * m
+            datos[:, VX] = px / mg_new
+            datos[:, VY] = py / mg_new
+            datos[:, VZ] = pz / mg_new
+
             datos[:, X] += datos[:, VX] * dt
             datos[:, Y] += datos[:, VY] * dt
             datos[:, Z] += datos[:, VZ] * dt
 
-            # Energía cinética Newtoniana: E = ½ m v²
-            v2 = datos[:, VX]**2 + datos[:, VY]**2 + datos[:, VZ]**2
-            datos[:, ENERGIA] = 0.5 * MASA_ELECTRON * v2
+            datos[:, ENERGIA] = (gamma_new - 1.0) * mc2
 
             historico.append(Bunch(datos.copy()))
 
     # ------------------------------------------------------------------
-    # Versión Relativista:  F = dp/dt,  p = γ·m·v
+    # Modo DC — campo constante, sin bunching
     # ------------------------------------------------------------------
-    def _simular_relativista(self, datos, dt, pasos, historico):
+    def _simular_dc(self, datos, dt, pasos, historico):
+        c = VELOCIDAD_LUZ
+        m = MASA_ELECTRON
+        q = CARGA_ELECTRON
+        mc2 = m * c * c
+
         for paso in range(pasos):
-            t = paso * dt
+            vx, vy, vz = datos[:, VX], datos[:, VY], datos[:, VZ]
+            v2 = vx*vx + vy*vy + vz*vz
+            gamma = 1.0 / np.sqrt(1.0 - v2 / (c*c))
 
-            # Campo RF viajero
-            E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
+            mg = gamma * m
+            px, py, pz = mg * vx, mg * vy, mg * vz
 
-            # 1. Velocidad al cuadrado y factor γ actual
-            v2 = datos[:, VX]**2 + datos[:, VY]**2 + datos[:, VZ]**2
-            gamma = 1.0 / np.sqrt(1.0 - v2 / VELOCIDAD_LUZ**2)
-
-            # 2. Momento lineal relativista:  p = γ·m·v
-            masa_gamma = gamma * MASA_ELECTRON
-            px = masa_gamma * datos[:, VX]
-            py = masa_gamma * datos[:, VY]
-            pz = masa_gamma * datos[:, VZ]
-
-            # 3. Actualizar p_z con el impulso  Δp = q·E·Δt
             mascara = np.abs(datos[:, Z]) < self.longitud / 2
-            dp_z = np.where(mascara, CARGA_ELECTRON * E_z * dt, 0.0)
+            dp_z = np.where(mascara, q * self.E0 * dt, 0.0)
             pz += dp_z
 
-            # 4. Recalcular γ desde |p|:
-            #    γ = √(1 + p²/(m²c²))   →  proviene de  E² = p²c² + m²c⁴
-            p2 = px**2 + py**2 + pz**2
-            gamma_new = np.sqrt(1.0 + p2 / (MASA_ELECTRON * VELOCIDAD_LUZ)**2)
+            p2 = px*px + py*py + pz*pz
+            gamma_new = np.sqrt(1.0 + p2 / (m*m * c*c))
 
-            # 5. Nueva velocidad:  v = p / (γ·m)
-            masa_gamma_new = gamma_new * MASA_ELECTRON
-            datos[:, VX] = px / masa_gamma_new
-            datos[:, VY] = py / masa_gamma_new
-            datos[:, VZ] = pz / masa_gamma_new
+            mg_new = gamma_new * m
+            datos[:, VX] = px / mg_new
+            datos[:, VY] = py / mg_new
+            datos[:, VZ] = pz / mg_new
 
-            # 6. Actualizar posiciones
             datos[:, X] += datos[:, VX] * dt
             datos[:, Y] += datos[:, VY] * dt
             datos[:, Z] += datos[:, VZ] * dt
 
-            # 7. Energía cinética relativista:  E_k = (γ - 1)·m·c²
-            datos[:, ENERGIA] = (gamma_new - 1.0) * MASA_ELECTRON * VELOCIDAD_LUZ**2
+            datos[:, ENERGIA] = (gamma_new - 1.0) * mc2
 
             historico.append(Bunch(datos.copy()))
