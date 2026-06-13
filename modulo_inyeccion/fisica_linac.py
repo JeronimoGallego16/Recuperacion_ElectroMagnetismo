@@ -43,18 +43,27 @@ from common.bunch import Bunch
 
 
 class Linac:
-    """Acelerador lineal (Linac) con campo RF viajero.
+    """Acelerador lineal (Linac) con dos modos de operación.
 
-    Encapsula los parámetros físicos del linac y el método de simulación.
+    Modos:
+      - 'dc' (default): campo eléctrico constante E_z = E0.
+        Aceleración pareja de todas las partículas.
+      - 'rf': campo RF viajero E_z = E0·sin(ωt - kz + φ).
+        Produce aceleración + bunching natural.
 
     Parameters de __init__
     ----------------------
+    modo : {'dc', 'rf'}
+        Modo de operación del Linac.
     E0 : float
-        Amplitud del campo eléctrico RF (V/m). Típico: 1e6 a 10e6 V/m.
+        Amplitud del campo eléctrico (V/m).
+        - DC: E0 = 2e5 V/m → ~37 keV (default).
+        - RF: E0 = 5e6 V/m → ~75 keV.
     frecuencia : float
-        Frecuencia RF (Hz). Típico: 3e9 Hz (banda S).
+        Frecuencia RF (Hz). Solo usado en modo 'rf'. Típico: 3e9 Hz (banda S).
     fase : float
-        Fase inicial del campo (rad). π/4 da aceleración + bunching.
+        Fase inicial del campo (rad). Solo usado en modo 'rf'.
+        π/4 da aceleración + bunching.
     longitud : float
         Longitud física del linac (m). Fuera de este rango no hay campo.
     relativista : bool
@@ -62,17 +71,37 @@ class Linac:
         Si False, usa Newton (F = m·a). Recomendado: True.
     """
 
-    def __init__(self, E0=1e6, frecuencia=3e9, fase=np.pi / 4, longitud=1.0,
-                 relativista=True):
-        self.E0 = E0
+    def __init__(self, modo='dc', E0=None, frecuencia=3e9,
+                 fase=np.pi / 4, longitud=1.0, relativista=True):
+        self.modo = modo
         self.frecuencia = frecuencia
         self.fase = fase
         self.longitud = longitud
         self.relativista = relativista
 
-        # Precálculo de parámetros de la onda
+        # Valores por defecto de E0 según modo
+        if E0 is None:
+            if modo == 'dc':
+                E0 = 2e5
+            else:
+                E0 = 5e6
+        self.E0 = E0
+
+        # Precálculo de parámetros de la onda (modo RF)
         self.omega = 2 * np.pi * frecuencia
         self.k = self.omega / VELOCIDAD_LUZ   # número de onda
+
+    # ------------------------------------------------------------------
+    # Campo eléctrico según modo de operación
+    # ------------------------------------------------------------------
+    def _campo_electrico(self, t, datos):
+        """Devuelve E_z para cada partícula según el modo."""
+        if self.modo == 'dc':
+            return self.E0
+        else:
+            return self.E0 * np.sin(
+                self.omega * t - self.k * datos[:, Z] + self.fase
+            )
 
     def simular(self, bunch, dt=1e-12, pasos=2500):
         """Ejecuta la simulación del paso del bunch por el Linac.
@@ -116,8 +145,8 @@ class Linac:
         for paso in range(pasos):
             t = paso * dt
 
-            # Campo RF viajero
-            E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
+            # Campo eléctrico según modo
+            E_z = self._campo_electrico(t, datos)
 
             # Máscara: fuera del linac no hay campo
             mascara = np.abs(datos[:, Z]) < self.longitud / 2
@@ -142,8 +171,8 @@ class Linac:
         for paso in range(pasos):
             t = paso * dt
 
-            # Campo RF viajero
-            E_z = self.E0 * np.sin(self.omega * t - self.k * datos[:, Z] + self.fase)
+            # Campo eléctrico según modo
+            E_z = self._campo_electrico(t, datos)
 
             # 1. Velocidad al cuadrado y factor γ actual
             v2 = datos[:, VX]**2 + datos[:, VY]**2 + datos[:, VZ]**2
