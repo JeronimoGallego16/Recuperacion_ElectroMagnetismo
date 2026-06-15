@@ -41,6 +41,11 @@ class Bunch:
         else:
             self.datos = np.zeros((n_particulas, 7))
 
+        # Metadatos opcionales usados por el módulo del anillo.
+        # No forman parte de la matriz principal del bunch.
+        self.intensidad_fotones = 0.0
+        self.z_media = 0.0
+
     # ------------------------------------------------------------------
     # Propiedades de acceso a columnas por nombre
     # ------------------------------------------------------------------
@@ -86,7 +91,10 @@ class Bunch:
 
     def copia(self):
         """Devuelve una copia independiente del Bunch."""
-        return Bunch(self.datos.copy())
+        nuevo_bunch = Bunch(self.datos.copy())
+        nuevo_bunch.intensidad_fotones = self.intensidad_fotones
+        nuevo_bunch.z_media = self.z_media
+        return nuevo_bunch
 
     def actualizar_energia(self):
         """Recalcula la energía cinética de cada partícula desde las velocidades.

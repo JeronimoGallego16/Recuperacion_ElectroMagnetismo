@@ -15,6 +15,9 @@ Cada etapa:
 import matplotlib.pyplot as plt
 from modulo_inyeccion import Bunch, Linac, animar_linac
 from modulo_transferencia import Booster, animar_booster
+from modulo_anillo import Ring, animar_ring
+from modulo_inyeccion import Bunch, Linac, animar_linac
+from modulo_transferencia import Booster, animar_booster
 
 
 def main():
@@ -46,7 +49,7 @@ def main():
     print(f"Animación del Booster ({len(historico_booster)} frames). Mostrando...")
     animar_booster(historico_booster)
 
-    # bunch_salida = historico_booster[-1]  # para el Integrante 3
+    bunch_salida = historico_booster[-1]  # para el Integrante 3
 
     # ==================================================================
     # ETAPA 3 — Ring (Integrante 3 — pendiente)
@@ -57,8 +60,14 @@ def main():
     # historico_ring = ring.simular(historico_booster[-1])
     # animar_ring(historico_ring)
 
-    print("\n=== Simulación completada ===")
-    plt.close('all')
+    print("\n=== ETAPA 3: Ring ===")
+    print("Inyectando bunch en el Storage Ring...")
+
+    ring = Ring()
+    historico_ring = ring.simular(bunch_salida)
+
+    print(f"Animación del Ring ({len(historico_ring)} frames). Mostrando...")
+    animar_ring(historico_ring)
 
 
 if __name__ == "__main__":
