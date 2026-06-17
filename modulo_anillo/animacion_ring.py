@@ -13,23 +13,34 @@ Muestra:
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.colors import Normalize
+from matplotlib.gridspec import GridSpec
 
-from common.constants import VELOCIDAD_LUZ
+from common.constants import VELOCIDAD_LUZ, CARGA_ELECTRON
 
 
 def animar_ring(historico, intervalo=30):
-    fig, ejes = plt.subplots(2, 2, figsize=(11, 8))
+    fig = plt.figure(figsize=(11, 8))
+    fig.subplots_adjust(top=0.90, left=0.06, right=0.94, bottom=0.06)
 
-    ax_haz = ejes[0, 0]
-    ax_fase_x = ejes[0, 1]
-    ax_fase_y = ejes[1, 0]
-    ax_fotones = ejes[1, 1]
+    gs = GridSpec(2, 3, width_ratios=[1, 0.04, 1], hspace=0.35, wspace=0.3)
+    ax_haz = fig.add_subplot(gs[0, 0])
+    ax_fase_x = fig.add_subplot(gs[0, 2])
+    ax_fase_y = fig.add_subplot(gs[1, 0])
+    ax_fotones = fig.add_subplot(gs[1, 2])
+    cax = fig.add_subplot(gs[:, 1])
 
     scat_haz = ax_haz.scatter([], [], s=6, alpha=0.6)
     linea_centro, = ax_haz.plot([], [], linewidth=2.5)
 
-    scat_fase_x = ax_fase_x.scatter([], [], s=10)
-    scat_fase_y = ax_fase_y.scatter([], [], s=10)
+    # Pre-calcular rango de energia para el color (keV)
+    todas_e = np.concatenate([b.energia for b in historico])
+    e_min_kev = todas_e.min() / (CARGA_ELECTRON * 1e3)
+    e_max_kev = todas_e.max() / (CARGA_ELECTRON * 1e3)
+    norm = Normalize(vmin=e_min_kev, vmax=e_max_kev)
+
+    scat_fase_x = ax_fase_x.scatter([], [], s=10, cmap='plasma', norm=norm)
+    scat_fase_y = ax_fase_y.scatter([], [], s=10, cmap='plasma', norm=norm)
 
     linea_fotones, = ax_fotones.plot([], [])
 
@@ -106,8 +117,14 @@ def animar_ring(historico, intervalo=30):
 
     configurar_limites()
 
+    fig.colorbar(scat_fase_x, cax=cax, label='Energia (keV)')
+
+    def j_a_kev(e):
+        return e / (CARGA_ELECTRON * 1e3)
+
     def actualizar(frame):
         bunch = historico[frame]
+        e_kev = j_a_kev(bunch.energia)
 
         datos_haz = np.column_stack((bunch.z, bunch.x))
         datos_fase_x = np.column_stack((bunch.x, bunch.vx / VELOCIDAD_LUZ))
@@ -116,6 +133,11 @@ def animar_ring(historico, intervalo=30):
         scat_haz.set_offsets(datos_haz)
         scat_fase_x.set_offsets(datos_fase_x)
         scat_fase_y.set_offsets(datos_fase_y)
+
+        scat_fase_x.set_array(e_kev)
+        scat_fase_x.set_norm(norm)
+        scat_fase_y.set_array(e_kev)
+        scat_fase_y.set_norm(norm)
 
         linea_centro.set_data(
             centros_z[:frame + 1],
@@ -127,7 +149,17 @@ def animar_ring(historico, intervalo=30):
             intensidades[:frame + 1]
         )
 
-        fig.suptitle(f"Storage Ring - Frame {frame}")
+        e_media = e_kev.mean()
+        fig.suptitle(
+            'Storage Ring  —  '
+            'Frame %d/%d  —  '
+            '<E> = %.1f keV  —  '
+            'Fotones: %.3f' % (
+                frame, len(historico) - 1,
+                e_media,
+                intensidades[frame]
+            )
+        )
 
         return scat_haz, scat_fase_x, scat_fase_y, linea_fotones, linea_centro
 
@@ -141,8 +173,7 @@ def animar_ring(historico, intervalo=30):
         repeat_delay=500
     )
 
-    plt.tight_layout()
-    fig.subplots_adjust(top=0.90)
+    # Layout ya ajustado en GridSpec y subplots_adjust arriba
     plt.show()
 
     return animacion

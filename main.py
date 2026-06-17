@@ -1,28 +1,21 @@
 """
-main.py — Pipeline principal de la simulación del sincrotrón
+main.py — Pipeline principal de la simulacion del sincrotron
 
 Pipeline:
-  1. Linac  (Integrante 1)  → aceleración lineal (~37 keV)
-  2. Booster (Integrante 2)  → inyección, curvatura + RF
-  3. Ring   (Integrante 3)  → (pendiente)
-
-Cada etapa:
-  - Calcula toda la física primero (Opción A, diferido)
-  - Guarda el histórico completo
-  - Pasa el último frame a la siguiente etapa
+  1. Linac  (Integrante 1)  -> aceleracion lineal (~27 keV)
+  2. Booster (Integrante 2)  -> inyeccion, curvatura + RF (~527 keV)
+  3. Ring   (Integrante 3)  -> undulator + fotones
 """
 
 import matplotlib.pyplot as plt
 from modulo_inyeccion import Bunch, Linac, animar_linac
 from modulo_transferencia import Booster, animar_booster
 from modulo_anillo import Ring, animar_ring
-from modulo_inyeccion import Bunch, Linac, animar_linac
-from modulo_transferencia import Booster, animar_booster
 
 
 def main():
     # ==================================================================
-    # ETAPA 1 — Inyección y Aceleración Lineal (Integrante 1)
+    # ETAPA 1 — Inyeccion y Aceleracion Lineal (Integrante 1)
     # ==================================================================
     print("=== ETAPA 1: Linac ===")
     print("Generando bunch inicial...")
@@ -32,10 +25,9 @@ def main():
     linac = Linac()
     historico_linac = linac.simular(bunch)
 
-    print(f"Animación del Linac ({len(historico_linac)} frames). Mostrando...")
+    print("Animacion del Linac. Mostrando...")
     animar_linac(historico_linac)
 
-    # Pasar el estado final a la siguiente etapa
     bunch_salida = historico_linac[-1]
 
     # ==================================================================
@@ -46,28 +38,24 @@ def main():
     booster = Booster()
     historico_booster = booster.simular(bunch_salida)
 
-    print(f"Animación del Booster ({len(historico_booster)} frames). Mostrando...")
+    print("Animacion del Booster. Mostrando...")
     animar_booster(historico_booster)
 
-    bunch_salida = historico_booster[-1]  # para el Integrante 3
+    bunch_salida = historico_booster[-1]
 
     # ==================================================================
-    # ETAPA 3 — Ring (Integrante 3 — pendiente)
+    # ETAPA 3 — Ring (Integrante 3)
     # ==================================================================
-    # from modulo_anillo import Ring, animar_ring
-    # print("\n=== ETAPA 3: Ring ===")
-    # ring = Ring()
-    # historico_ring = ring.simular(historico_booster[-1])
-    # animar_ring(historico_ring)
-
     print("\n=== ETAPA 3: Ring ===")
-    print("Inyectando bunch en el Storage Ring...")
-
+    print("Simulando el Ring...")
     ring = Ring()
     historico_ring = ring.simular(bunch_salida)
 
-    print(f"Animación del Ring ({len(historico_ring)} frames). Mostrando...")
+    print("Animacion del Ring. Mostrando...")
     animar_ring(historico_ring)
+
+    print("\n=== Simulacion completada ===")
+    plt.close('all')
 
 
 if __name__ == "__main__":
