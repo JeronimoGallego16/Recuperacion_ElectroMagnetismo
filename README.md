@@ -15,7 +15,7 @@ Cada electrón es una fila en un array NumPy (N, 7). La clase `Bunch` envuelve e
 
 ## Pipeline final (cuando estén los 3 integrantes)
 
-```python
+```python   
 from common import Bunch
 from modulo_inyeccion import Linac, animar_linac
 from modulo_transferencia import Booster, animar_booster

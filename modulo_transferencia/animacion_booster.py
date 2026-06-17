@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import Normalize
 from matplotlib.gridspec import GridSpec
-from common.constants import CARGA_ELECTRON, VELOCIDAD_LUZ
+from common.constants import CARGA_ELECTRON
 
 
 def animar_booster(historico, radio_booster=2.0, intervalo=10,
@@ -96,6 +96,9 @@ def animar_booster(historico, radio_booster=2.0, intervalo=10,
     radio_medio = np.array([
         np.sqrt(np.mean(h.x**2 + h.z**2)) for h in historico
     ])
+    velocidad_media = np.array([
+        np.sqrt(h.vx**2 + h.vy**2 + h.vz**2).mean() for h in historico
+    ])
 
     # ==================================================================
     # Panel 1: Vista en planta (x vs z) — órbita circular
@@ -146,9 +149,12 @@ def animar_booster(historico, radio_booster=2.0, intervalo=10,
     ax3.legend(loc='upper right', fontsize=8)
 
     # Barra de color (compartida por todos los paneles)
-    cbar = fig.colorbar(scatter1, ax=[ax1, ax2, ax3],
+    mappable = plt.cm.ScalarMappable(norm=norm, cmap='plasma')
+    mappable.set_array([])
+    cbar = fig.colorbar(mappable, ax=[ax1, ax2, ax3],
                          label='Energía (keV)',
                          shrink=0.6, location='right')
+    cbar.set_ticks(np.linspace(e_min_kev, e_max_kev, 5))
 
     # Título general con tiempo simulado
     titulo_tiempo = fig.suptitle(
@@ -191,7 +197,8 @@ def animar_booster(historico, radio_booster=2.0, intervalo=10,
             f'Simulación del Booster  —  '
             f'Paso {frame}/{n_frames - 1}  —  '
             f'⟨E⟩ = {e_kev.mean():.2f} keV  —  '
-            f'⟨R⟩ = {radio_medio[frame]:.3f} m'
+            f'⟨R⟩ = {radio_medio[frame]:.3f} m  —  '
+            f'⟨v⟩ = {velocidad_media[frame]:.3e} m/s'
         )
 
     # ==================================================================
